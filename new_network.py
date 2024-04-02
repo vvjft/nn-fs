@@ -1,15 +1,15 @@
 import numpy as np
 def sigmoid(x):
-    return 1/(1+np.exp(x))
+    return 1.0/(1.0+np.exp(-x))
 
 def sigmoid_prime(x):
-    return sigmoid(x)*(1-sigmoid(x))
+    return sigmoid(x)*(1.0-sigmoid(x))
 
 def cost(y,x):
-    return np.sum(0.5*(y-x)**2)
+    return np.sum(0.5*(x-y)**2)
 
 def cost_prime(y,x):
-    return y-x
+    return x-y
 
 class Network:
     def __init__(self, layers):
@@ -50,4 +50,10 @@ class Network:
 
 L = [1,3,2,3]
 a=np.array([[1]])
-y=np.array([[1],[0],[0]])
+y=np.array([[0],[1],[0]])
+
+net = Network(L)
+net.feedforward(a)
+for i in range(50):
+    net.learn(a,y)
+net.feedforward(a)
