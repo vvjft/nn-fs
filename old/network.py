@@ -23,8 +23,8 @@ class Network(object):
     
         
     def learn(self, train, eta):
-        nabla_b = [np.zeros(b.shape) for b in self.biases]
-        nabla_w = [np.zeros(w.shape) for w in self.weights]
+        nabla_b = [np.zeros(b.shape) for b in net.biases]
+        nabla_w = [np.zeros(w.shape) for w in net.weights]
         for x, y in train:
             nabla_b_shift, nabla_w_shift = self.backprob(x, y)
             nabla_b = [nb+dnb for nb, dnb in zip(nabla_b, nabla_b_shift)] # O ile przesunac b i w
