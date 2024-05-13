@@ -17,10 +17,10 @@ You can download data manually [here](https://www.kaggle.com/datasets/oddrationa
 - numpy,
 - pandas (only for reading csv).
   
-Optional (for downloading and extracting dataset):
+Optional (for downloading and extracting data):
 - kaggle, zipfile, os.
   
-In order to use Kaggle's API you may want to create authenticate API token. Please refer to [Kaggle's docs](https://www.kaggle.com/docs/api).
+In order to use Kaggle's API you may want to create authentication API token. Please refer to [Kaggle's docs](https://www.kaggle.com/docs/api).
 
 ## Usage
 0. If you have downloaded the dataset manually, please specify its path when callig `pd.read_csv()` for `train` and `test`. Do not remove `to_numpy()` method.
@@ -35,7 +35,9 @@ In order to use Kaggle's API you may want to create authenticate API token. Plea
    - learning rate,
    - lambda parameter for L2 regularization,
    - patience rate (10 by default)
-   - a list, where first element is the test features and the second its lables,
    - a list, where first element is the validation features and the second its lables.
 
 Example usage is available in MLP_recognizing_digits.ipynb.
+
+## Bibliography
+-Michael A. Nielsen, "Neural Networks and Deep Learning", Determination Press, 2015, [link](http://neuralnetworksanddeeplearning.com/index.html)
