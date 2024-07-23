@@ -2,42 +2,43 @@
 This project is dedicated to building a neural network from scratch to recognize digits. Its aim is to understand how neural networks function, including implementing methods to improve performance and manage overfitting.
 
 ## Features
-- Activation Functions: sigmoid and ReLu,
-- Cost Functions: Quadratic or Cross Entropy,
-- Stochastic Gradient Descent optimizer,
+- Activation Functions: sigmoid, ReLu,
+- Cost Functions: Quadratic, Cross Entropy,
+- Optimizer: Stochastic Gradient Descent,
 - Early stopping,
-- Regularization.
+- Regularization,
+- Data augmentation (rotation and shifting),
+- Hyperparameter tuning.
 
 ## Dataset
 The data set used in this project is pupular MNIST data set which contains exaples of handwriting digits. The dataset was already provided in CSV format and can be downloaded, extracted and preprocessed within the code.
 
-You can download data manually [here](https://www.kaggle.com/datasets/oddrationale/mnist-in-csv).
+You can download the data manually [here](https://www.kaggle.com/datasets/oddrationale/mnist-in-csv).
 
-## Prerequsities (Python libraries)
+## Prerequsities
+Third party:
 - numpy,
-- pandas (only for reading csv).
+- pandas,
+- matplotlib,
+- optuna (if you want to tune the hyperparameters),
+- kaggle (if you want to download the data within the code).
   
-Optional (for downloading and extracting data):
-- kaggle, zipfile, os.
+Inbuilt:
+- subprocess, zipfile, os.
   
 In order to use Kaggle's API you may want to create authentication API token. Please refer to [Kaggle's docs](https://www.kaggle.com/docs/api).
 
 ## Usage
-0. If you have downloaded the dataset manually, please specify its path when callig `pd.read_csv()` for `train` and `test`. Do not remove `to_numpy()` method.
-1. Create an instance of the `Network` class. Its inputs are:
-    - list of number of neurons in each layer (e.g. `[10,30,5]` implies 3 layers with 10 input neurons, 30 hidden neurons and 10 output neurons. **Note that because of the nature of the dataset the input layer has to be of size 784** (28x28 pixels).
-    - cost function: `'quadratic'` or `'cross_entropy'`.
-    - activation function: `'sigmoid'` or `'ReLu'`.
- 2. Call `fit()` method on the instance. Its inputs are:
-   - a list, where first element is the training features and the second its lables,
-   - batch size for SGD,
-   - number of epochs,
-   - learning rate,
-   - lambda parameter for L2 regularization,
-   - patience rate (10 by default)
-   - a list, where first element is the validation features and the second its lables.
+Run `python MLP.py` in the project's directory. The default parameters are set, but you can change them :
+- `--epochs`,
+- `--batch_size`,
+- `--eta`,
+- `--lmbda`.
+  
+Example: `python MLP.py --epochs 15 --batch_size 30`.
 
-Example usage is available in MLP_recognizing_digits.ipynb.
+The rest of the parameters (for example the number of layers) need to be adjusted manually in the code.
 
-## Bibliography
--Michael A. Nielsen, "Neural Networks and Deep Learning", Determination Press, 2015, [link](http://neuralnetworksanddeeplearning.com/index.html)
+## Acknowledgements 
+- Michael A. Nielsen, "Neural Networks and Deep Learning", Determination Press, 2015, [link](http://neuralnetworksanddeeplearning.com/index.html)
+- Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama. 2019. Optuna: A Next-generation Hyperparameter Optimization Framework. In KDD, [link](https://optuna.org/)
