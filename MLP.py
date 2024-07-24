@@ -25,8 +25,8 @@ def read_config(config_path, section='hyperparameters'):
             'batch_size': config.getint(section, 'batch_size'),
             'eta': config.getfloat(section, 'eta'),
             'lmbda': config.getfloat(section, 'lmbda'),
-            'cost_function': config.get(section, 'cost_function'),
-            'activation_function': config.get(section, 'activation_function'),
+            'cost': config.get(section, 'cost'),
+            'activation': config.get(section, 'activation'),
 
         }
     
@@ -36,7 +36,7 @@ def read_config(config_path, section='hyperparameters'):
             'show_history': config.getboolean(section, 'show_history'),
             'visualize': config.getboolean(section, 'visualize'),
             'n_trials': config.getint(section, 'n_trials'),
-            'n_augmentations': config.getint(section, 'n_augmentations')
+            'n_augment': config.getint(section, 'n_augment')
         }
     
     return config_values
@@ -264,7 +264,7 @@ def load_weights_and_biases(data, net, path='./data'):
     print(f'Accuracy: {acc}')
     return acc
 
-def tune_hyperparameters(n_trials):
+def tune_hyperparameters(n_trials, data, epochs):
     def objective(trial):
         n_neurons = trial.suggest_int('n_neurons', 1, 1000)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
@@ -273,7 +273,8 @@ def tune_hyperparameters(n_trials):
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
-        acc = learn(layers=[784, n_neurons, 10], epochs=10, batch_size=batch_size, eta=eta, cost_function='cross_entropy', activation_function='sigmoid', lmbda=lmbda, download_data=False, show_history=True, visualize=False)
+        net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid')
+        acc = learn(data, net, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, visualize=False)
         #trial.report(intermediate_acc, 15)
 
         #if trial.should_prune():
@@ -304,32 +305,32 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, help='Batch size for training.')
     parser.add_argument('--eta', type=float, help='Learning rate.')
     parser.add_argument('--lmbda', type=float, help='Regularization parameter.')
-    parser.add_argument('--cost_function', choices=['cross_entropy', 'quadratic'], help='Cost function.')
-    parser.add_argument('--activation_function', choices=['sigmoid', 'relu'], help='Activation function.')
+    parser.add_argument('--cost', choices=['cross_entropy', 'quadratic'], help='Cost function.')
+    parser.add_argument('--activation', choices=['sigmoid', 'relu'], help='Activation function.')
     parser.add_argument('--show_history', type=bool, help='Show training history.')
     parser.add_argument('--visualize', type=bool, help='Visualize training history.')
     parser.add_argument('--download_data', type=bool, help='Download the dataset.')
     parser.add_argument('--n_trials', type=int, help='Number of trials for hyperparameter tuning.')
-    parser.add_argument('--n_augmentations', type=int, help='Number of augmentations for the training set.')
+    parser.add_argument('--n_augment', type=int, help='Number of augmentations for the training set (rotations and shifting).')
     args = parser.parse_args()
 
     # Load default values from config file
     config_hyperparameters = read_config('config.ini', section='hyperparameters')
     layers_str = config_hyperparameters['layers']
-    default_layers = [int(x) for x in layers_str.split(',')]
+    default_layers = [int(x) for x in layers_str.split(',')] # parse string to list of integers
     default_epochs = config_hyperparameters['epochs']
     default_batch_size = config_hyperparameters['batch_size']
     default_eta = config_hyperparameters['eta']
     default_lmbda = config_hyperparameters['lmbda']
-    default_cost_function = config_hyperparameters['cost_function']
-    default_activation_function = config_hyperparameters['activation_function']
+    default_cost = config_hyperparameters['cost']
+    default_activation = config_hyperparameters['activation']
 
     config_options = read_config('config.ini', section='options')
     show_history = config_options['show_history']
     visualize = config_options['visualize']
     download_data = config_options['download_data']
     default_n_trials = config_options['n_trials']
-    default_n_augmentations = config_options['n_augmentations']
+    default_n_augment = config_options['n_augment']
 
     # Override defaults with command-line arguments if provided
     layers = args.layers if args.layers is not None else default_layers
@@ -337,20 +338,20 @@ if __name__ == '__main__':
     batch_size = args.batch_size if args.batch_size is not None else default_batch_size
     eta = args.eta if args.eta is not None else default_eta
     lmbda = args.lmbda if args.lmbda is not None else default_lmbda
-    activation_function = args.activation_function if args.activation_function is not None else default_activation_function
-    cost_function = args.cost_function if args.cost_function is not None else default_cost_function
+    activation = args.activation if args.activation is not None else default_activation
+    cost = args.cost if args.cost is not None else default_cost
     show_history = args.show_history if args.show_history is not None else show_history
     visualize = args.visualize if args.visualize is not None else visualize
     download_data = args.download_data if args.download_data is not None else download_data
     n_trials = args.n_trials if args.n_trials is not None else default_n_trials
-    n_augmentations = args.n_augmentations if args.n_augmentations is not None else default_n_augmentations
+    n_augment = args.n_augment if args.n_augment is not None else default_n_augment
     
     # Load the data
-    data_loader = mnist_loader(download=download_data, path='./data', n_augmentations=n_augmentations)
+    data_loader = mnist_loader(download=download_data, path='./data', n_augment=n_augment)
     data = data_loader.train, data_loader.valid, data_loader.test
 
     # Initialize the network
-    net = MLP(layers=layers, cost_function=cost_function, activation_function=activation_function)
+    net = MLP(layers=layers, cost_function=cost, activation_function=activation)
 
     if args.command == 'learn':
         learn(data=data,
@@ -364,4 +365,4 @@ if __name__ == '__main__':
     elif args.command == 'load':
         load_weights_and_biases(data=data, net=net)
     elif args.command == 'tune':
-        tune_hyperparameters(n_trials=n_trials)
+        tune_hyperparameters(n_trials=n_trials, data=data, epochs=epochs)

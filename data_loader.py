@@ -7,13 +7,13 @@ import os
 
 #### Data download and preprocessing ####
 class mnist_loader:
-    def __init__(self, download=True, path='./data', n_augmentations=0):
+    def __init__(self, download=True, path='./data', n_augment=0):
         '''' 
         If download is True, download and extract to directory specified in path. 
         Otherwise, load the dataset from the directory specified in path. 
         '''
         self.path = path
-        self.n_augmentations = n_augmentations
+        self.n_augment = n_augment
         if download:
             self.prepare_data()
         else:
@@ -27,7 +27,7 @@ class mnist_loader:
         self.download_and_extract_data()
         self.training_data = pd.read_csv(os.path.join(self.path, 'mnist_train.csv')).values
         self.test_data = pd.read_csv(os.path.join(self.path, 'mnist_test.csv')).values
-        self.train, self.valid, self.test = self.preprocess(self.training_data, self.test_data, n_augmentations=self.n_augmentations)
+        self.train, self.valid, self.test = self.preprocess(self.training_data, self.test_data)
 
     def download_and_extract_data(self):
         ''' Use Kaggle API to download and extract the MNIST dataset.'''
@@ -59,14 +59,14 @@ class mnist_loader:
         Y_valid = np.eye(10)[Y_valid].T
         Y_test = np.eye(10)[Y_test].T
         
-        if self.n_augmentations > 0:
-            for i in range(self.n_augmentations):
+        if self.n_augment > 0:
+            for i in range(self.n_augment):
                 original_image = X_train[:,i].reshape(28, 28)
                 y=Y_train[:,i].reshape(-1,1)
                 augmented_image = self.augment_data(original_image).reshape(784, 1)
                 X_train = np.concatenate((X_train, augmented_image), axis=1)
                 Y_train = np.concatenate((Y_train, y), axis=1)
-                print(f'Augmented {i+1}/{self.n_augmentations} images', end='\r')
+                print(f'Augmented {i+1}/{self.n_augment} images', end='\r')
             print('\n')
         
         # Save the preprocessed arrays in the specified path
@@ -81,7 +81,7 @@ class mnist_loader:
         print('Preprocessing complete.')
         return train, valid, test
         
-    def augment_data(self, image):
+    def augment_data(self, image): # to do: augment list of images
         def bilinear_interpolate(image, x, y):
             x0, x1 = int(np.floor(x)), int(np.ceil(x))
             y0, y1 = int(np.floor(y)), int(np.ceil(y))
@@ -126,7 +126,7 @@ class mnist_loader:
         transform_func = np.random.choice(transformations)
         return transform_func(image)
     
-    def load_data(self):
+    def load_data(self): # to do: add augmentation
         X_train = np.load(os.path.join(self.path, 'X_train.npy'))
         Y_train = np.load(os.path.join(self.path, 'Y_train.npy'))
         X_valid = np.load(os.path.join(self.path, 'X_valid.npy'))
