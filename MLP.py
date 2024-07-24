@@ -4,12 +4,43 @@ import optuna
 import matplotlib.pyplot as plt
 
 import argparse
+import configparser
 import logging
 import sys
 
 from data_loader import mnist_loader
 
 #### Utility functions ####
+'''Reads parameters from the config file'''
+def read_config(config_path, section='hyperparameters'):
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    if section not in config:
+        raise ValueError(f"Section '{section}' not found in the config file.")
+    
+    elif section == 'hyperparameters':
+        config_values = {
+            'layers': config.get(section, 'layers'),
+            'epochs': config.getint(section, 'epochs'),
+            'batch_size': config.getint(section, 'batch_size'),
+            'eta': config.getfloat(section, 'eta'),
+            'lmbda': config.getfloat(section, 'lmbda'),
+            'cost_function': config.get(section, 'cost_function'),
+            'activation_function': config.get(section, 'activation_function'),
+
+        }
+    
+    elif section == 'options':
+        config_values = {
+            'download_data': config.getboolean(section, 'download_data'),
+            'show_history': config.getboolean(section, 'show_history'),
+            'visualize': config.getboolean(section, 'visualize'),
+            'n_trials': config.getint(section, 'n_trials'),
+            'n_augmentations': config.getint(section, 'n_augmentations')
+        }
+    
+    return config_values
+
 """Activation functions and derivatives with respect to z"""
 def sigmoid(z):
     return 1/(1+np.exp(-z))
@@ -40,7 +71,7 @@ activation_functions = {'sigmoid': (sigmoid, sigmoid_derivative), 'relu': (ReLu,
 cost_functions = {'quadratic': (quadratic, quadratic_derivative), 'cross_entropy': (cross_entropy, cross_entropy_derivative)}
 
 #### MLP class ####
-class Network:
+class MLP:
     def __init__(self, layers, cost_function = 'cross_entropy', activation_function = 'sigmoid'):
         self.L = layers
         self.W = [np.random.randn(x,y)/np.sqrt(y) for x,y in zip(self.L[1:],self.L[0:-1])] # divide by stadard deviation to avoid saturation
@@ -99,7 +130,7 @@ class Network:
             best_W, best_B = self.__update_best_parameters(acc, cost, best_acc, best_cost)
             no_progress_count = self.__check_no_progress(acc, cost, best_acc, best_cost, no_progress_count)
 
-            if no_progress_count > patience or eta<1e-6:
+            if no_progress_count > patience or eta<1e-6: # to do: fix early stopping
                 self.W, self.B = best_W, best_B
                 print(f"Early stopping: no improvement on validation set for {patience} epochs. Saving parameters from epoch {epoch-patience}.")
                 #break
@@ -201,22 +232,39 @@ class Network:
                 correct_predictions += 1
         return correct_predictions, correct_predictions/(X.shape[1])
     
-    def save(self, path):
-        np.savez(path, W=self.W)
+    def save(self, path): 
+        np.savez(f'{path}/weights.npz', *self.W)
+        np.savez(f'{path}/biases.npz', *self.B)
 
+    def load(self, path):
+        weights_data = np.load(f'{path}/weights.npz')
+        biases_data = np.load(f'{path}/biases.npz')
 
-#### Main ####
-def main(layers=[784, 30, 10], epochs=10, batch_size=34, eta=0.5, lmbda=1.132):
-    
-    data_loader = mnist_loader(download=False, path='./data', num_augmentations=0)
-    train, valid, test = data_loader.train, data_loader.valid, data_loader.test
+        self.W = [weights_data[key] for key in weights_data.files]
+        self.B = [biases_data[key] for key in biases_data.files]
 
-    net = Network(layers=layers, cost_function='cross_entropy', activation_function='sigmoid')
-    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta,  lmbda=lmbda, patience=10, valid_set=valid, show_history=True, visualize=True)
-    _, acc = net.evaluate(*test)
+#### Main section ####
+def learn(data, net, epochs, batch_size, eta, lmbda, show_history, visualize):
+    train, valid, test = data
+    net = net
+    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, visualize=visualize)
+    net.save('./data/')
+    num_correct, acc = net.evaluate(*test)
+    print(f'Properly classified {num_correct}/{test[0].shape[1]} test images.')
+    print(f'Accuracy: {acc}')
     return acc
 
-def tune_hyperparameters():
+def load_weights_and_biases(data, net, path='./data'):
+    train, valid, test = data
+    net = net
+    net.load(path)
+
+    num_correct, acc = net.evaluate(*test)
+    print(f'Properly classified {num_correct}/{test[0].shape[1]} test images.')
+    print(f'Accuracy: {acc}')
+    return acc
+
+def tune_hyperparameters(n_trials):
     def objective(trial):
         n_neurons = trial.suggest_int('n_neurons', 1, 1000)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
@@ -225,7 +273,7 @@ def tune_hyperparameters():
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
-        acc = main(layers=[784, n_neurons, 10], batch_size=batch_size, eta=eta, lmbda=lmbda)
+        acc = learn(layers=[784, n_neurons, 10], epochs=10, batch_size=batch_size, eta=eta, cost_function='cross_entropy', activation_function='sigmoid', lmbda=lmbda, download_data=False, show_history=True, visualize=False)
         #trial.report(intermediate_acc, 15)
 
         #if trial.should_prune():
@@ -235,7 +283,7 @@ def tune_hyperparameters():
     #optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
     #study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=25)
+    study.optimize(objective, n_trials=n_trials)
     print("Number of finished trials: ", len(study.trials))
 
     print("Best trial:")
@@ -248,16 +296,72 @@ def tune_hyperparameters():
         print("    {}: {}".format(key, value))
 
 if __name__ == '__main__':
+    # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Train a neural network on MNIST dataset.')
-    parser.add_argument('command', choices=['tune_hyperparameters', 'main'])
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train.')
-    parser.add_argument('--batch_size', type=int, default=34, help='Batch size for training.')
-    parser.add_argument('--eta', type=float, default=0.4933969709233855, help='Learning rate.')
-    parser.add_argument('--lmbda', type=float, default=1.131779, help='Regularization parameter.')
-    
+    parser.add_argument('command', choices=['learn', 'load', 'tune'], help='What to do.')
+    parser.add_argument('--layers', nargs='+', type=int, help='Number of neurons in each layer.')
+    parser.add_argument('--epochs', type=int, help='Number of epochs to train.')
+    parser.add_argument('--batch_size', type=int, help='Batch size for training.')
+    parser.add_argument('--eta', type=float, help='Learning rate.')
+    parser.add_argument('--lmbda', type=float, help='Regularization parameter.')
+    parser.add_argument('--cost_function', choices=['cross_entropy', 'quadratic'], help='Cost function.')
+    parser.add_argument('--activation_function', choices=['sigmoid', 'relu'], help='Activation function.')
+    parser.add_argument('--show_history', type=bool, help='Show training history.')
+    parser.add_argument('--visualize', type=bool, help='Visualize training history.')
+    parser.add_argument('--download_data', type=bool, help='Download the dataset.')
+    parser.add_argument('--n_trials', type=int, help='Number of trials for hyperparameter tuning.')
+    parser.add_argument('--n_augmentations', type=int, help='Number of augmentations for the training set.')
     args = parser.parse_args()
+
+    # Load default values from config file
+    config_hyperparameters = read_config('config.ini', section='hyperparameters')
+    layers_str = config_hyperparameters['layers']
+    default_layers = [int(x) for x in layers_str.split(',')]
+    default_epochs = config_hyperparameters['epochs']
+    default_batch_size = config_hyperparameters['batch_size']
+    default_eta = config_hyperparameters['eta']
+    default_lmbda = config_hyperparameters['lmbda']
+    default_cost_function = config_hyperparameters['cost_function']
+    default_activation_function = config_hyperparameters['activation_function']
+
+    config_options = read_config('config.ini', section='options')
+    show_history = config_options['show_history']
+    visualize = config_options['visualize']
+    download_data = config_options['download_data']
+    default_n_trials = config_options['n_trials']
+    default_n_augmentations = config_options['n_augmentations']
+
+    # Override defaults with command-line arguments if provided
+    layers = args.layers if args.layers is not None else default_layers
+    epochs = args.epochs if args.epochs is not None else default_epochs
+    batch_size = args.batch_size if args.batch_size is not None else default_batch_size
+    eta = args.eta if args.eta is not None else default_eta
+    lmbda = args.lmbda if args.lmbda is not None else default_lmbda
+    activation_function = args.activation_function if args.activation_function is not None else default_activation_function
+    cost_function = args.cost_function if args.cost_function is not None else default_cost_function
+    show_history = args.show_history if args.show_history is not None else show_history
+    visualize = args.visualize if args.visualize is not None else visualize
+    download_data = args.download_data if args.download_data is not None else download_data
+    n_trials = args.n_trials if args.n_trials is not None else default_n_trials
+    n_augmentations = args.n_augmentations if args.n_augmentations is not None else default_n_augmentations
     
-    if args.command == 'tune_hyperparameters':
-        tune_hyperparameters()
-    elif args.command == 'main':
-        main(epochs=args.epochs, batch_size=args.batch_size, eta=args.eta, lmbda=args.lmbda)
+    # Load the data
+    data_loader = mnist_loader(download=download_data, path='./data', n_augmentations=n_augmentations)
+    data = data_loader.train, data_loader.valid, data_loader.test
+
+    # Initialize the network
+    net = MLP(layers=layers, cost_function=cost_function, activation_function=activation_function)
+
+    if args.command == 'learn':
+        learn(data=data,
+              net=net, 
+              epochs=epochs, 
+              batch_size=batch_size, 
+              eta=eta, 
+              lmbda=lmbda, 
+              show_history=show_history, 
+              visualize=visualize)
+    elif args.command == 'load':
+        load_weights_and_biases(data=data, net=net)
+    elif args.command == 'tune':
+        tune_hyperparameters(n_trials=n_trials)

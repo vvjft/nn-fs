@@ -7,23 +7,30 @@ import os
 
 #### Data download and preprocessing ####
 class mnist_loader:
-    def __init__(self, download=True, path='./data', num_augmentations=0):
+    def __init__(self, download=True, path='./data', n_augmentations=0):
         '''' 
         If download is True, download and extract to directory specified in path. 
         Otherwise, load the dataset from the directory specified in path. 
         '''
         self.path = path
+        self.n_augmentations = n_augmentations
         if download:
-            self.download_and_extract_data()
-            self.training_data = pd.read_csv('./data/mnist_train.csv').values
-            self.test_data = pd.read_csv('./data/mnist_test.csv').values
-            self.train, self.valid, self.test = self.preprocess(self.training_data, self.test_data, num_augmentations=num_augmentations)
+            self.prepare_data()
         else:
-            self.train, self.valid, self.test = self.load_data()
+            try:
+                self.train, self.valid, self.test = self.load_data()
+            except Exception as e:
+                print(f"Failed to load data: {e}. Attempting to download and extract...")
+                self.prepare_data() 
     
-    def download_and_extract_data(self):
-        ''' Use Kaggle API to download and extract the MNIST dataset '''
+    def prepare_data(self):
+        self.download_and_extract_data()
+        self.training_data = pd.read_csv(os.path.join(self.path, 'mnist_train.csv')).values
+        self.test_data = pd.read_csv(os.path.join(self.path, 'mnist_test.csv')).values
+        self.train, self.valid, self.test = self.preprocess(self.training_data, self.test_data, n_augmentations=self.n_augmentations)
 
+    def download_and_extract_data(self):
+        ''' Use Kaggle API to download and extract the MNIST dataset.'''
         dataset = 'oddrationale/mnist-in-csv'
         result = subprocess.run(['kaggle', 'datasets', 'download', '-d', dataset, '-p', self.path], check=True)
         if result.returncode != 0:
@@ -32,9 +39,8 @@ class mnist_loader:
             zip_path = os.path.join(self.path, 'mnist-in-csv.zip')
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(self.path)
-            os.remove(zip_path)
 
-    def preprocess(self, training_data, test_data, num_augmentations):
+    def preprocess(self, training_data, test_data):
         print('Preprocessing data...')
         X_train, Y_train = training_data[:,1:] / 255 , training_data[:,0]
         X_test, Y_test = test_data[:,1:] / 255, test_data[:,0]
@@ -52,15 +58,17 @@ class mnist_loader:
         Y_train = np.eye(10)[Y_train].T
         Y_valid = np.eye(10)[Y_valid].T
         Y_test = np.eye(10)[Y_test].T
-
-        for i in range(num_augmentations):
-            original_image = X_train[:,i].reshape(28, 28)
-            y=Y_train[:,i].reshape(-1,1)
-            augmented_image = self.augment_data(original_image).reshape(784, 1)
-            X_train = np.concatenate((X_train, augmented_image), axis=1)
-            Y_train = np.concatenate((Y_train, y), axis=1)
-            print(f'Augmented {i+1}/{num_augmentations} images', end='\r')
-
+        
+        if self.n_augmentations > 0:
+            for i in range(self.n_augmentations):
+                original_image = X_train[:,i].reshape(28, 28)
+                y=Y_train[:,i].reshape(-1,1)
+                augmented_image = self.augment_data(original_image).reshape(784, 1)
+                X_train = np.concatenate((X_train, augmented_image), axis=1)
+                Y_train = np.concatenate((Y_train, y), axis=1)
+                print(f'Augmented {i+1}/{self.n_augmentations} images', end='\r')
+            print('\n')
+        
         # Save the preprocessed arrays in the specified path
         np.save(os.path.join(self.path, 'X_train.npy'), X_train)
         np.save(os.path.join(self.path, 'Y_train.npy'), Y_train)
@@ -70,7 +78,7 @@ class mnist_loader:
         np.save(os.path.join(self.path, 'Y_test.npy'), Y_test)
 
         train, valid, test = (X_train, Y_train), (X_valid, Y_valid), (X_test, Y_test)
-        print('\nPreprocessing complete.')
+        print('Preprocessing complete.')
         return train, valid, test
         
     def augment_data(self, image):
