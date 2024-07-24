@@ -24,20 +24,40 @@ Third party:
 - kaggle (if you want to download the data within the code).
   
 Inbuilt:
-- subprocess, zipfile, os.
+- argparse, configparser, subprocess, zipfile, os.
   
 In order to use Kaggle's API you may want to create authentication API token. Please refer to [Kaggle's docs](https://www.kaggle.com/docs/api).
 
 ## Usage
-Run `python MLP.py` in the project's directory. The default parameters are set, but you can change them :
+Create folder named 'data' in the project's directory. If you have downloaded dataset manually, store it there. Otherwise, leave it empty.
+
+You can run the program in three ways:
+
+Training and saving: `python MLP.py learn`
+
+Loading and evaluating model: `python MLP.py load`
+
+Tuning hyperparameters: `python MLP.py tune`
+
+The default parameters are stored in the config.ini file. You can change them directly or run command-line arguments:
+- `--layers`,
 - `--epochs`,
 - `--batch_size`,
 - `--eta`,
-- `--lmbda`.
+- `--lmbda`,
+- `--cost_function`,
+- `--activation_function`.
+  
+Additionally several options are possible:
+- `--show_history`,
+-  `--visualize`,
+-  `--download_data`,
+-  `--n_trails`,
+-  `--n_augmentations`.
+
+To check what each options does, run `python MLP.py --help`.
   
 Example: `python MLP.py --epochs 15 --batch_size 30`.
-
-The rest of the parameters (for example the number of layers) need to be adjusted manually in the code.
 
 ## Acknowledgements 
 - Michael A. Nielsen, "Neural Networks and Deep Learning", Determination Press, 2015, [link](http://neuralnetworksanddeeplearning.com/index.html)
