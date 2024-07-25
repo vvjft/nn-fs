@@ -7,6 +7,7 @@ import argparse
 import configparser
 import logging
 import sys
+from datetime import datetime
 
 from data_loader import mnist_loader
 
@@ -134,9 +135,10 @@ class MLP:
                 self.W, self.B = best_W, best_B
                 print(f"Early stopping: no improvement on validation set for {patience} epochs. Saving parameters from epoch {epoch-patience}.")
                 #break
-            elif show_history:
+            elif show_history: # to do: add timestamp
                 if valid_set is not None:
-                    print(f"epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {acc_train}, cost_train: {cost_train}, no_progress_count: {no_progress_count}")
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
                 else:    
                     print(f"epoch: {epoch}, ACC: {acc}, cost: {cost}")
 
@@ -179,6 +181,14 @@ class MLP:
             W_grad.append(np.dot(d,a.T)) # eq. (4)
         return (W_grad, B_grad)
 
+    def __track_progress(self, X, Y, visualize=False, accs={}, costs={}):
+        """ Evaluates accuracy and cost and the end of each epoch. """
+        acc = self.evaluate(X, Y)[1]
+        cost = round(self.cost_function(Y, self.feedforward(X))/X.shape[1], 4)
+        if visualize:
+            self.visualize_progress(accs, costs)
+        return acc, cost
+
     def __update_best_parameters(self, acc, cost, best_acc, best_cost):
         if acc > best_acc or cost < best_cost:
             best_W, best_B = self.W.copy(), self.B.copy()
@@ -194,14 +204,6 @@ class MLP:
         else:
             no_progress_count += 1
         return no_progress_count
-
-    def __track_progress(self, X, Y, visualize=False, accs={}, costs={}):
-        """ Evaluates accuracy and cost and the end of each epoch. """
-        acc = self.evaluate(X, Y)[1]
-        cost = round(self.cost_function(Y, self.feedforward(X))/X.shape[1], 4)
-        if visualize:
-            self.visualize_progress(accs, costs)
-        return acc, cost
 
     def visualize_progress(self, accs, costs):
         fig, axs = plt.subplots(1, 2, figsize=(12, 6)) 
@@ -244,7 +246,7 @@ class MLP:
         self.B = [biases_data[key] for key in biases_data.files]
 
 #### Main section ####
-def learn(data, net, epochs, batch_size, eta, lmbda, show_history, visualize):
+def learn(net, data, epochs, batch_size, eta, lmbda, show_history, visualize):
     train, valid, test = data
     net = net
     net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, visualize=visualize)
@@ -254,7 +256,7 @@ def learn(data, net, epochs, batch_size, eta, lmbda, show_history, visualize):
     print(f'Accuracy: {acc}')
     return acc
 
-def load_weights_and_biases(data, net, path='./data'):
+def load_weights_and_biases(net, data, path='./data'):
     train, valid, test = data
     net = net
     net.load(path)
@@ -266,7 +268,7 @@ def load_weights_and_biases(data, net, path='./data'):
 
 def tune_hyperparameters(n_trials, data, epochs):
     def objective(trial):
-        n_neurons = trial.suggest_int('n_neurons', 1, 1000)
+        n_neurons = trial.suggest_int('n_neurons', 1, 100)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
         lmbda = trial.suggest_float('lmbda', 1e-3, 10)
         batch_size = trial.suggest_int('batch_size', 10, 100)
@@ -274,13 +276,14 @@ def tune_hyperparameters(n_trials, data, epochs):
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
         net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid')
-        acc = learn(data, net, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, visualize=False)
+        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, visualize=False)
+        _, acc_valid = net.evaluate(*data[1])
         #trial.report(intermediate_acc, 15)
 
         #if trial.should_prune():
             #raise optuna.TrialPruned()
         
-        return acc
+        return acc_valid
     #optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
     #study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
     study = optuna.create_study(direction="maximize")
@@ -354,8 +357,8 @@ if __name__ == '__main__':
     net = MLP(layers=layers, cost_function=cost, activation_function=activation)
 
     if args.command == 'learn':
-        learn(data=data,
-              net=net, 
+        learn(net=net,
+              data=data, 
               epochs=epochs, 
               batch_size=batch_size, 
               eta=eta, 
@@ -363,6 +366,6 @@ if __name__ == '__main__':
               show_history=show_history, 
               visualize=visualize)
     elif args.command == 'load':
-        load_weights_and_biases(data=data, net=net)
+        load_weights_and_biases(net=net, data=data)
     elif args.command == 'tune':
         tune_hyperparameters(n_trials=n_trials, data=data, epochs=epochs)
