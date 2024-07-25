@@ -45,8 +45,8 @@ The default parameters are stored in the config.ini file. You can change them di
 - `--batch_size`,
 - `--eta`,
 - `--lmbda`,
-- `--cost_function`,
-- `--activation_function`.
+- `--cost`,
+- `--activation`.
   
 Additionally several options are possible:
 - `--show_history`,
