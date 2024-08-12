@@ -1,4 +1,7 @@
 data/
 __pycache__/
 testy/
-bibliography
+MLP-ENV/
+bibliography/
+logs/
+ziemowit/
