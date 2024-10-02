@@ -1,11 +1,14 @@
 #### Imports ####
-import numpy as np
+import cupy as np
 import optuna 
+import matplotlib.pyplot as plt
+
 import argparse
 import configparser
 import logging
 import sys
 from datetime import datetime
+
 from data_loader import mnist_loader
 
 #### Utility functions ####
@@ -91,18 +94,20 @@ class MLP:
             A = self.activation_function(Z)
         return A
 
-    def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True):
+    def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True, visualize=False):
         # Set-up
         X_train, Y_train = train_set
         num_training_examples = X_train.shape[1]
         if valid_set is not None:
             X_valid, Y_valid = valid_set
-            print("Tracking progress on the validation set")
+            print("Tracking progress on the validation set:")
         else:
-            print("Tracking progress on the training set")
-        best_acc, no_progress_count, best_epoch = 0.0, np.Inf, 0
+            print("Tracking progress on the training set:")
+        best_acc, best_cost, no_progress_count = 0.0, np.Inf, 0
 
         # Training
+        accs = {'valid': [], 'train': []}
+        costs = {'valid': [], 'train': []}
         for epoch in range(epochs):
             X_batches = np.array_split(X_train, X_train.shape[1] // batch_size, axis=1)
             Y_batches = np.array_split(Y_train, Y_train.shape[1] // batch_size, axis=1)
@@ -114,29 +119,30 @@ class MLP:
             if valid_set is not  None:
                 acc, cost = self.__track_progress(X_valid, Y_valid)
                 acc_train, cost_train = self.__track_progress(X_train, Y_train)
+                accs['valid'].append(acc)
+                costs['valid'].append(cost)
+                accs['train'].append(acc_train)
+                costs['train'].append(cost_train)  
             else:
                 acc, cost = self.__track_progress(X_train, Y_train)
+                accs['train'].append(acc)
+                costs['train'].append(cost)
 
-            if acc > best_acc:
-                best_W, best_B = self.W.copy(), self.B.copy()
-                best_acc = acc
-                best_epoch = epoch
-                no_progress_count = 0
-            else:
-                no_progress_count += 1
-            
-            if no_progress_count > patience: # to do: fix early stopping
+            best_W, best_B = self.__update_best_parameters(acc, cost, best_acc, best_cost)
+            no_progress_count = self.__check_no_progress(acc, cost, best_acc, best_cost, no_progress_count)
+
+            if no_progress_count > patience or eta<1e-6: # to do: fix early stopping
                 self.W, self.B = best_W, best_B
-                print(f"Early stopping: no improvement on validation set for {patience} epochs. Saving parameters from epoch {best_epoch}.")
-                break
+                print(f"Early stopping: no improvement on validation set for {patience} epochs. Saving parameters from epoch {epoch-patience}.")
+                #break
             elif show_history: # to do: add timestamp
                 if valid_set is not None:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
+                    print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {acc_train}, cost_train: {cost_train}, no_progress_count: {no_progress_count}")
                 else:    
                     print(f"epoch: {epoch}, ACC: {acc}, cost: {cost}")
 
-        self.__track_progress(X_train, Y_train)
+        self.__track_progress(X_train, Y_train, visualize=visualize, accs=accs, costs=costs)
 
     def __SGD(self, X_batch, Y_batch, eta, lmbda, num_training_examples):
         nabla_B = [np.zeros(b.shape) for b in self.B]
@@ -164,7 +170,8 @@ class MLP:
 
     def __get_gradients(self, y, A, Z):
         def delta(y,x,z):
-            return self.cost_function_derivative(y,x)*self.activation_derivative(z)         
+            return self.cost_function_derivative(y,x)*self.activation_derivative(z)
+            
         D = [delta(y,A[-1],Z[-1])] # eq. (1)
         for i in range(1,len(Z)):
             D.insert(0, np.dot(self.W[-i].T,D[0])*self.activation_derivative(Z[-i-1])) # eq. (2)
@@ -174,11 +181,50 @@ class MLP:
             W_grad.append(np.dot(d,a.T)) # eq. (4)
         return (W_grad, B_grad)
 
-    def __track_progress(self, X, Y):
-        """Evaluates accuracy and cost and the end of each epoch."""
-        acc = self.evaluate(X, Y)
-        cost = round(self.cost_function(Y, self.feedforward(X))/X.shape[1], 4)
+    def __track_progress(self, X, Y, visualize=False, accs={}, costs={}):
+        """ Evaluates accuracy and cost and the end of each epoch. """
+        acc = self.evaluate(X, Y)[1]
+        cost = self.cost_function(Y, self.feedforward(X))/X.shape[1]
+        if visualize:
+            self.visualize_progress(accs, costs)
         return acc, cost
+
+    def __update_best_parameters(self, acc, cost, best_acc, best_cost):
+        if acc > best_acc or cost < best_cost:
+            best_W, best_B = self.W.copy(), self.B.copy()
+            if acc > best_acc:
+                best_acc = acc
+            if cost < best_cost:
+                best_cost = cost
+        return best_W, best_B
+    
+    def __check_no_progress(self, acc, cost, best_acc, best_cost, no_progress_count):
+        if acc > best_acc or cost < best_cost:
+            no_progress_count = 0
+        else:
+            no_progress_count += 1
+        return no_progress_count
+
+    def visualize_progress(self, accs, costs):
+        fig, axs = plt.subplots(1, 2, figsize=(12, 6)) 
+        fig.suptitle('Training Progress')
+        
+        axs[0].plot(range(len(costs['valid'])), costs['valid'], 'r-', label='Validation Cost')
+        axs[0].plot(range(len(costs['train'])), costs['train'], 'b-', label='Training Cost')
+        axs[0].set_title('Cost Over Epochs')
+        axs[0].set_xlabel('Epochs')
+        axs[0].set_ylabel('Cost')
+        axs[0].set_yscale('log')
+        axs[0].legend()
+
+        axs[1].plot(range(len(accs['valid'])), accs['valid'], 'r-', label='Validation ACC')
+        axs[1].plot(range(len(accs['train'])), accs['train'], 'b-', label='Training ACC')
+        axs[1].set_title('Accuracy Over Epochs')
+        axs[1].set_xlabel('Epochs')
+        axs[1].set_ylabel('Accuracy')
+        axs[1].legend()
+
+        plt.show()
 
     def evaluate(self, X, Y):
         correct_predictions = 0
@@ -186,7 +232,7 @@ class MLP:
         for prediction, y in zip(predictions.T, Y.T):
             if np.argmax(prediction) == np.argmax(y):
                 correct_predictions += 1
-        return correct_predictions/(X.shape[1])
+        return correct_predictions, correct_predictions/(X.shape[1])
     
     def save(self, path): 
         np.savez(f'{path}/weights.npz', *self.W)
@@ -195,16 +241,18 @@ class MLP:
     def load(self, path):
         weights_data = np.load(f'{path}/weights.npz')
         biases_data = np.load(f'{path}/biases.npz')
+
         self.W = [weights_data[key] for key in weights_data.files]
         self.B = [biases_data[key] for key in biases_data.files]
 
 #### Main section ####
-def learn(net, data, epochs, batch_size, eta, lmbda, show_history):
+def learn(net, data, epochs, batch_size, eta, lmbda, show_history, visualize):
     train, valid, test = data
     net = net
-    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history)
+    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, visualize=visualize)
     net.save('./data/')
-    acc = net.evaluate(*test)
+    num_correct, acc = net.evaluate(*test)
+    print(f'Properly classified {num_correct}/{test[0].shape[1]} test images.')
     print(f'Accuracy: {acc}')
     return acc
 
@@ -213,7 +261,8 @@ def load_weights_and_biases(net, data, path='./data'):
     net = net
     net.load(path)
 
-    acc = net.evaluate(*test)
+    num_correct, acc = net.evaluate(*test)
+    print(f'Properly classified {num_correct}/{test[0].shape[1]} test images.')
     print(f'Accuracy: {acc}')
     return acc
 
@@ -228,7 +277,7 @@ def tune_hyperparameters(n_trials, data, epochs):
 
         net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid')
         acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, visualize=False)
-        acc_valid = net.evaluate(*data[1])
+        _, acc_valid = net.evaluate(*data[1])
         #trial.report(intermediate_acc, 15)
 
         #if trial.should_prune():
@@ -314,7 +363,8 @@ if __name__ == '__main__':
               batch_size=batch_size, 
               eta=eta, 
               lmbda=lmbda, 
-              show_history=show_history)
+              show_history=show_history, 
+              visualize=visualize)
     elif args.command == 'load':
         load_weights_and_biases(net=net, data=data)
     elif args.command == 'tune':
