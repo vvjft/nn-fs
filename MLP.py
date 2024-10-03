@@ -227,7 +227,7 @@ def tune_hyperparameters(n_trials, data, epochs):
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
         net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid')
-        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, visualize=False)
+        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True)
         acc_valid = net.evaluate(*data[1])
         #trial.report(intermediate_acc, 15)
 

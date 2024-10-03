@@ -86,7 +86,7 @@ class mnist_loader:
             wa, wb, wc, wd = (x1 - x) * (y1 - y), (x1 - x) * (y - y0), (x - x0) * (y1 - y), (x - x0) * (y - y0)
             return Ia * wa + Ib * wb + Ic * wc + Id * wd
 
-        def rotate_image(image, angle_range=(-60, 60)):
+        def rotate_image(image, angle_range=(-15, 15)):
             angle = np.random.uniform(angle_range[0], angle_range[1])
             angle_rad = np.deg2rad(angle)
             A = np.array([[np.cos(angle_rad), -np.sin(angle_rad)], [np.sin(angle_rad), np.cos(angle_rad)]])
