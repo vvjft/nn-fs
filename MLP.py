@@ -70,7 +70,7 @@ cost_functions = {'quadratic': (quadratic, quadratic_derivative), 'cross_entropy
 
 #### MLP class ####
 class MLP:
-    def __init__(self, layers, cost_function = 'cross_entropy', activation_function = 'sigmoid'):
+    def __init__(self, layers, cost_function = 'cross_entropy', activation_function = 'sigmoid', dropout_rate=0.5):
         self.L = layers
         self.W = [np.random.randn(x,y)/np.sqrt(y) for x,y in zip(self.L[1:],self.L[0:-1])] # divide by stadard deviation to avoid saturation
         self.B = [np.random.randn(x,1) for x in self.L[1:]]
@@ -83,6 +83,8 @@ class MLP:
             self.activation_function, self.activation_derivative = activation_functions[activation_function]
         else:
             raise ValueError(f"Invalid activation function: {activation_function}")
+        
+        self.dropout_rate=dropout_rate
 
     def feedforward(self, X):
         A = X
@@ -91,7 +93,7 @@ class MLP:
             A = self.activation_function(Z)
         return A
 
-    def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True):
+    def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True, trial=None):
         # Set-up
         X_train, Y_train = train_set
         num_training_examples = X_train.shape[1]
@@ -106,7 +108,8 @@ class MLP:
         for epoch in range(epochs):
             X_batches = np.array_split(X_train, X_train.shape[1] // batch_size, axis=1)
             Y_batches = np.array_split(Y_train, Y_train.shape[1] // batch_size, axis=1)
-            for X_batch, Y_batch in zip(X_batches, Y_batches):  
+            for X_batch, Y_batch in zip(X_batches, Y_batches):
+                
                 self.__SGD(X_batch, Y_batch, eta, lmbda, num_training_examples)
 
             # Tracking progress
@@ -135,7 +138,13 @@ class MLP:
                     print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
                 else:    
                     print(f"epoch: {epoch}, ACC: {acc}, cost: {cost}")
-
+            
+            # Prune unpromising trial (only for hyperparameters tuning) 
+            if trial:
+                trial.report(acc, epoch)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+                
         self.__track_progress(X_train, Y_train)
 
     def __SGD(self, X_batch, Y_batch, eta, lmbda, num_training_examples):
@@ -147,31 +156,44 @@ class MLP:
             delta_nabla_W, delta_nabla_B = self.__backprop(a, y)
             nabla_B = [nb+dnb for nb, dnb in zip(nabla_B, delta_nabla_B)] 
             nabla_W = [nw+dnw for nw, dnw in zip(nabla_W, delta_nabla_W)]
-        self.W = [w-eta*nw/X_batch.shape[1] - eta*lmbda*w/num_training_examples for w, nw in zip(self.W, nabla_W)] # L2 regularization
+        #self.W = [w-eta*nw/X_batch.shape[1] - eta*lmbda*w/num_training_examples for w, nw in zip(self.W, nabla_W)] # L2 regularization
+        self.W = [w-eta*nw/X_batch.shape[1] - eta*w/num_training_examples for w, nw in zip(self.W, nabla_W)]
         self.B = [b-eta*nb/X_batch.shape[1] for b, nb in zip(self.B, nabla_B)]
 
+    
     def __backprop(self, a, y):
         """ Updates network's weights and biases by applying backpropagation. """
         Z=[]
         A=[a]
-        for w,b in zip(self.W,self.B):
-            z = np.dot(w,A[-1])+b
+        # forward pass
+        for i in range(len(self.W)):
+            z = np.dot(self.W[i],A[-1])+self.B[i]
             a=self.activation_function(z)
             Z.append(z)
+            if i>=0 and i<len(self.W)-1:
+                a, mask = self.dropout(a, self.dropout_rate)
             A.append(a)
-        (delta_nabla_W, delta_nabla_B) = self.__get_gradients(y, A, Z)
-        return (delta_nabla_W, delta_nabla_B)
 
-    def __get_gradients(self, y, A, Z):
+        (delta_nabla_W, delta_nabla_B) = self.__get_gradients(y, A, Z, mask)
+        return (delta_nabla_W, delta_nabla_B)
+    
+    def dropout(self, a, rate=0.5):
+            mask = (np.random.random(a.shape) > rate).astype(np.float32)
+            a = a*mask/ (1 - rate)
+            return a, mask
+    
+    def __get_gradients(self, y, A, Z, mask):
         def delta(y,x,z):
-            return self.cost_function_derivative(y,x)*self.activation_derivative(z)         
+            return self.cost_function_derivative(y,x)*self.activation_derivative(z) 
+                
         D = [delta(y,A[-1],Z[-1])] # eq. (1)
         for i in range(1,len(Z)):
             D.insert(0, np.dot(self.W[-i].T,D[0])*self.activation_derivative(Z[-i-1])) # eq. (2)
+        D[0]*=mask
         B_grad = D # eq. (3)
         W_grad = []
         for a,d in zip(A[0:-1],D):
-            W_grad.append(np.dot(d,a.T)) # eq. (4)
+            W_grad.append(np.dot(d,np.transpose(a))) # eq. (4)
         return (W_grad, B_grad)
 
     def __track_progress(self, X, Y):
@@ -199,10 +221,10 @@ class MLP:
         self.B = [biases_data[key] for key in biases_data.files]
 
 #### Main section ####
-def learn(net, data, epochs, batch_size, eta, lmbda, show_history):
+def learn(net, data, epochs, batch_size, eta, lmbda, show_history, trial=None):
     train, valid, test = data
     net = net
-    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history)
+    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, trial=trial)
     net.save('./data/')
     acc = net.evaluate(*test)
     print(f'Accuracy: {acc}')
@@ -221,18 +243,15 @@ def tune_hyperparameters(n_trials, data, epochs):
     def objective(trial):
         n_neurons = trial.suggest_int('n_neurons', 1, 100)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
-        lmbda = trial.suggest_float('lmbda', 1e-3, 10)
+        #lmbda = trial.suggest_float('lmbda', 1e-3, 10)
         batch_size = trial.suggest_int('batch_size', 10, 100)
+        dropout_rate = trial.suggest_float('dropout_rate', 0, 1)
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
-        net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid')
-        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True)
+        net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid', dropout_rate=dropout_rate)
+        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, trial=trial)
         acc_valid = net.evaluate(*data[1])
-        #trial.report(intermediate_acc, 15)
-
-        #if trial.should_prune():
-            #raise optuna.TrialPruned()
         
         return acc_valid
     #optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
