@@ -1,10 +1,9 @@
 #### Imports ####
 import numpy as np
-import optuna 
+import optuna
 import argparse
 import configparser
 import logging
-import sys
 from datetime import datetime
 from data_loader import mnist_loader
 
@@ -32,7 +31,6 @@ def read_config(config_path, section='hyperparameters'):
         config_values = {
             'download_data': config.getboolean(section, 'download_data'),
             'show_history': config.getboolean(section, 'show_history'),
-            'visualize': config.getboolean(section, 'visualize'),
             'n_trials': config.getint(section, 'n_trials'),
             'n_augment': config.getint(section, 'n_augment')
         }
@@ -52,7 +50,7 @@ def ReLu(z):
 def ReLu_derivative(z):
     return np.where(z > 0, 1.0, 0.001)
 
-"""Cost functions and derivatives with respect to a"""
+"""Cost functions and derivatives with respect to activated neuron (a)"""
 def cross_entropy(y,a):
     return np.sum(np.nan_to_num(-y*np.log(a) - (1-y)*np.log(1-a)))
 
@@ -128,11 +126,11 @@ class MLP:
             else:
                 no_progress_count += 1
             
-            if no_progress_count > patience: # to do: fix early stopping
+            if no_progress_count > patience:
                 self.W, self.B = best_W, best_B
                 print(f"Early stopping: no improvement on validation set for {patience} epochs. Saving parameters from epoch {best_epoch}.")
                 break
-            elif show_history: # to do: add timestamp
+            elif show_history: 
                 if valid_set is not None:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M")
                     print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
@@ -156,11 +154,10 @@ class MLP:
             delta_nabla_W, delta_nabla_B = self.__backprop(a, y)
             nabla_B = [nb+dnb for nb, dnb in zip(nabla_B, delta_nabla_B)] 
             nabla_W = [nw+dnw for nw, dnw in zip(nabla_W, delta_nabla_W)]
-        #self.W = [w-eta*nw/X_batch.shape[1] - eta*lmbda*w/num_training_examples for w, nw in zip(self.W, nabla_W)] # L2 regularization
-        self.W = [w-eta*nw/X_batch.shape[1] - eta*w/num_training_examples for w, nw in zip(self.W, nabla_W)]
+        self.W = [w-eta*nw/X_batch.shape[1] - eta*lmbda*w/num_training_examples for w, nw in zip(self.W, nabla_W)] # L2 regularization
+        #self.W = [w-eta*nw/X_batch.shape[1] - eta*w/num_training_examples for w, nw in zip(self.W, nabla_W)]
         self.B = [b-eta*nb/X_batch.shape[1] for b, nb in zip(self.B, nabla_B)]
-
-    
+  
     def __backprop(self, a, y):
         """ Updates network's weights and biases by applying backpropagation. """
         Z=[]
@@ -170,26 +167,27 @@ class MLP:
             z = np.dot(self.W[i],A[-1])+self.B[i]
             a=self.activation_function(z)
             Z.append(z)
-            if i>=0 and i<len(self.W)-1:
-                a, mask = self.dropout(a, self.dropout_rate)
             A.append(a)
-
-        (delta_nabla_W, delta_nabla_B) = self.__get_gradients(y, A, Z, mask)
+        A, masks = self.dropout(A, 0.5)
+        (delta_nabla_W, delta_nabla_B) = self.__get_gradients(y, A, Z, masks)
         return (delta_nabla_W, delta_nabla_B)
     
-    def dropout(self, a, rate=0.5):
-            mask = (np.random.random(a.shape) > rate).astype(np.float32)
-            a = a*mask/ (1 - rate)
-            return a, mask
+    def dropout(self, A, rate=0.5):      
+            masks = [(np.random.random(np.shape(a)) > rate).astype(np.float32) for a in A[1:len(self.W)]]
+            #A = [a*mask/(1-rate) for a, mask in zip(A[1:len(self.W)], masks)]
+            for i, mask in zip(range(1, len(self.W)), masks):
+                A[i]=A[i]*mask/(1-rate)
+            return A, masks
     
-    def __get_gradients(self, y, A, Z, mask):
+    def __get_gradients(self, y, A, Z, masks):
         def delta(y,x,z):
             return self.cost_function_derivative(y,x)*self.activation_derivative(z) 
                 
         D = [delta(y,A[-1],Z[-1])] # eq. (1)
         for i in range(1,len(Z)):
             D.insert(0, np.dot(self.W[-i].T,D[0])*self.activation_derivative(Z[-i-1])) # eq. (2)
-        D[0]*=mask
+        for i, mask in zip(range(len(masks)),masks):
+            D[i]*=mask
         B_grad = D # eq. (3)
         W_grad = []
         for a,d in zip(A[0:-1],D):
@@ -240,12 +238,13 @@ def load_weights_and_biases(net, data, path='./data'):
     return acc
 
 def tune_hyperparameters(n_trials, data, epochs):
+     
     def objective(trial):
         n_neurons = trial.suggest_int('n_neurons', 1, 100)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
-        #lmbda = trial.suggest_float('lmbda', 1e-3, 10)
+        lmbda = trial.suggest_float('lmbda', 1e-3, 10)
         batch_size = trial.suggest_int('batch_size', 10, 100)
-        dropout_rate = trial.suggest_float('dropout_rate', 0, 1)
+        dropout_rate = trial.suggest_float('dropout_rate', 0, 0.8)
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
@@ -255,8 +254,7 @@ def tune_hyperparameters(n_trials, data, epochs):
         
         return acc_valid
     #optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-    #study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner(min_resource=10))
     study.optimize(objective, n_trials=n_trials)
     print("Number of finished trials: ", len(study.trials))
 
@@ -281,7 +279,6 @@ if __name__ == '__main__':
     parser.add_argument('--cost', choices=['cross_entropy', 'quadratic'], help='Cost function.')
     parser.add_argument('--activation', choices=['sigmoid', 'relu'], help='Activation function.')
     parser.add_argument('--show_history', type=bool, help='Show training history.')
-    parser.add_argument('--visualize', type=bool, help='Visualize training history.')
     parser.add_argument('--download_data', type=bool, help='Download the dataset.')
     parser.add_argument('--n_trials', type=int, help='Number of trials for hyperparameter tuning.')
     parser.add_argument('--n_augment', type=int, help='Number of augmentations for the training set (rotations and shifting).')
@@ -300,7 +297,6 @@ if __name__ == '__main__':
 
     config_options = read_config('config.ini', section='options')
     show_history = config_options['show_history']
-    visualize = config_options['visualize']
     download_data = config_options['download_data']
     default_n_trials = config_options['n_trials']
     default_n_augment = config_options['n_augment']
@@ -314,7 +310,6 @@ if __name__ == '__main__':
     activation = args.activation if args.activation is not None else default_activation
     cost = args.cost if args.cost is not None else default_cost
     show_history = args.show_history if args.show_history is not None else show_history
-    visualize = args.visualize if args.visualize is not None else visualize
     download_data = args.download_data if args.download_data is not None else download_data
     n_trials = args.n_trials if args.n_trials is not None else default_n_trials
     n_augment = args.n_augment if args.n_augment is not None else default_n_augment

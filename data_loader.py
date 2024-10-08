@@ -20,19 +20,14 @@ class mnist_loader:
         except Exception as e:
             print(f"Failed to load data: {e}. Reprocessing data...")
             self.train, self.valid, self.test = self.preprocess()
-    
-    def prepare_data(self):
-        self.download_and_extract_data()
-        self.training_data = pd.read_csv(os.path.join(self.path, 'mnist_train.csv')).values
-        self.test_data = pd.read_csv(os.path.join(self.path, 'mnist_test.csv')).values
-        self.train, self.valid, self.test = self.preprocess(self.training_data, self.test_data)
 
     def download_and_extract_data(self):
+        # TO DO: Extract when already downloaded
         ''' Use Kaggle API to download and extract the MNIST dataset.'''
         dataset = 'oddrationale/mnist-in-csv'
         result = subprocess.run(['kaggle', 'datasets', 'download', '-d', dataset, '-p', self.path], check=True)
         if result.returncode != 0:
-            raise Exception('Failed to download the dataset')
+            raise Exception('Failed to download the dataset. Make sure to have Kaggle API installed. Alternatively, download dataset manually: https://www.kaggle.com/datasets/oddrationale/mnist-in-csv')
         else:
             zip_path = os.path.join(self.path, 'mnist-in-csv.zip')
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -139,33 +134,3 @@ class mnist_loader:
 
         train, valid, test = (X_train, Y_train), (X_valid, Y_valid), (X_test, Y_test)
         return train, valid, test
-
-#### Testing the data loader ####
-#import matplotlib.pyplot as plt
-#loader = mnist_loader(download=True, path='./data2', n_augment=1000)
-#num_images = 10
-
-# Creating a figure with 2 rows (original and augmented) and num_images columns
-#fig, axs = plt.subplots(2, num_images, figsize=(15, 4))
-
-#for i in range(num_images):
-    # Original image
-#    original_image = loader.train[0][:, i].reshape(28, 28)
-#    axs[0, i].imshow(original_image, cmap='gray')
-#    axs[0, i].axis('off')
-#    if i == 0:
-#        axs[0, i].set_title('Original')
-
-    # Augmented image (assuming augmentations are stored right after the originals)
-#    augmented_image = loader.train[0][:, 50000+i].reshape(28, 28)
-#    axs[1, i].imshow(augmented_image, cmap='gray')
-#    axs[1, i].axis('off')
-#    if i == 0:
-#        axs[1, i].set_title('Augmented')
-
-# Display the plot
-#plt.tight_layout()
-#plt.show()
-
-#loader.preprocess()
-#print(loader.train[0].shape, loader.train[1].shape)
