@@ -44,11 +44,11 @@ def sigmoid(z):
 def sigmoid_derivative(z):
     return sigmoid(z)*(1-sigmoid(z))
 
-def ReLu(z):
+def relu(z):
     return np.maximum(0,z)
 
-def ReLu_derivative(z):
-    return np.where(z > 0, 1.0, 0.001)
+def relu_derivative(z):
+    return np.where(z > 0, 1.0, 0.0)
 
 """Cost functions and derivatives with respect to activated neuron (a)"""
 def cross_entropy(y,a):
@@ -63,7 +63,7 @@ def quadratic(y,a):
 def quadratic_derivative(y,a):
     return a-y
 
-activation_functions = {'sigmoid': (sigmoid, sigmoid_derivative), 'relu': (ReLu, ReLu_derivative)}
+activation_functions = {'sigmoid': (sigmoid, sigmoid_derivative), 'relu': (relu, relu_derivative)}
 cost_functions = {'quadratic': (quadratic, quadratic_derivative), 'cross_entropy': (cross_entropy, cross_entropy_derivative)}
 
 #### MLP class ####
@@ -136,13 +136,14 @@ class MLP:
                     print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
                 else:    
                     print(f"epoch: {epoch}, ACC: {acc}, cost: {cost}")
-            
+        
             # Prune unpromising trial (only for hyperparameters tuning) 
             if trial:
                 trial.report(acc, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
                 
+        self.best_acc = best_acc 
         self.__track_progress(X_train, Y_train)
 
     def __SGD(self, X_batch, Y_batch, eta, lmbda, num_training_examples):
@@ -174,7 +175,6 @@ class MLP:
     
     def dropout(self, A, rate=0.5):      
             masks = [(np.random.random(np.shape(a)) > rate).astype(np.float32) for a in A[1:len(self.W)]]
-            #A = [a*mask/(1-rate) for a, mask in zip(A[1:len(self.W)], masks)]
             for i, mask in zip(range(1, len(self.W)), masks):
                 A[i]=A[i]*mask/(1-rate)
             return A, masks
@@ -237,10 +237,9 @@ def load_weights_and_biases(net, data, path='./data'):
     print(f'Accuracy: {acc}')
     return acc
 
-def tune_hyperparameters(n_trials, data, epochs):
-     
+def tune_hyperparameters(n_trials, data, epochs): 
     def objective(trial):
-        n_neurons = trial.suggest_int('n_neurons', 1, 100)
+        n_neurons = trial.suggest_int('n_neurons', 1, 1500)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
         lmbda = trial.suggest_float('lmbda', 1e-3, 10)
         batch_size = trial.suggest_int('batch_size', 10, 100)
@@ -250,11 +249,11 @@ def tune_hyperparameters(n_trials, data, epochs):
 
         net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid', dropout_rate=dropout_rate)
         acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, trial=trial)
-        acc_valid = net.evaluate(*data[1])
+        acc_valid = net.best_acc
         
         return acc_valid
-    #optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner(min_resource=10))
+    
+    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner())
     study.optimize(objective, n_trials=n_trials)
     print("Number of finished trials: ", len(study.trials))
 
@@ -268,6 +267,7 @@ def tune_hyperparameters(n_trials, data, epochs):
         print("    {}: {}".format(key, value))
 
 if __name__ == '__main__':
+    # TO DO: add cupy, rename show_history
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Train a neural network on MNIST dataset.')
     parser.add_argument('command', choices=['learn', 'load', 'tune'], help='What to do.')
