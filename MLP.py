@@ -29,6 +29,7 @@ def read_config(config_path, section='hyperparameters'):
     
     elif section == 'options':
         config_values = {
+            'data_path': config.get(section, 'data_path'), 
             'download_data': config.getboolean(section, 'download_data'),
             'show_history': config.getboolean(section, 'show_history'),
             'n_trials': config.getint(section, 'n_trials'),
@@ -296,6 +297,7 @@ if __name__ == '__main__':
     default_activation = config_hyperparameters['activation']
 
     config_options = read_config('config.ini', section='options')
+    data_path = config_options['data_path']
     show_history = config_options['show_history']
     download_data = config_options['download_data']
     default_n_trials = config_options['n_trials']
@@ -315,7 +317,7 @@ if __name__ == '__main__':
     n_augment = args.n_augment if args.n_augment is not None else default_n_augment
     
     # Load the data
-    data_loader = mnist_loader(download=download_data, path='./data', n_augment=n_augment)
+    data_loader = mnist_loader(download=download_data, path=data_path, n_augment=n_augment)
     data = data_loader.train, data_loader.valid, data_loader.test
 
     # Initialize the network
