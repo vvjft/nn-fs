@@ -6,7 +6,7 @@ import os
 
 #### Data download and preprocessing ####
 class mnist_loader:
-    def __init__(self, download=True, path='./data', n_augment=0):
+    def __init__(self, download=True, path='./data', n_augment=0, use_gpu=False):
         '''' 
         If download is True, download and extract to directory specified in path. 
         Otherwise, load the dataset from the directory specified in path. 

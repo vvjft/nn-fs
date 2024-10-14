@@ -33,7 +33,8 @@ def read_config(config_path, section='hyperparameters'):
             'download_data': config.getboolean(section, 'download_data'),
             'show_history': config.getboolean(section, 'show_history'),
             'n_trials': config.getint(section, 'n_trials'),
-            'n_augment': config.getint(section, 'n_augment')
+            'n_augment': config.getint(section, 'n_augment'),
+            'use_gpu': config.getboolean(section, 'use_gpu')
         }
     
     return config_values
@@ -45,11 +46,18 @@ def sigmoid(z):
 def sigmoid_derivative(z):
     return sigmoid(z)*(1-sigmoid(z))
 
-def relu(z):
-    return np.maximum(0,z)
+def leaky_relu(z):
+    return np.maximum(0.01*z, z)
 
-def relu_derivative(z):
-    return np.where(z > 0, 1.0, 0.0)
+def leaky_relu_derivative(z):
+    return np.where(z > 0, 1.0, 0.01)
+
+def softmax(z):
+    exps = np.exp(z)
+    return exps / np.sum(exps)
+
+def softmax_derivative(z):
+    return softmax(z)
 
 """Cost functions and derivatives with respect to activated neuron (a)"""
 def cross_entropy(y,a):
@@ -64,7 +72,8 @@ def quadratic(y,a):
 def quadratic_derivative(y,a):
     return a-y
 
-activation_functions = {'sigmoid': (sigmoid, sigmoid_derivative), 'relu': (relu, relu_derivative)}
+
+activation_functions = {'sigmoid': (sigmoid, sigmoid_derivative), 'leaky_relu': (leaky_relu, leaky_relu_derivative), 'softmax': (softmax, softmax_derivative)}
 cost_functions = {'quadratic': (quadratic, quadratic_derivative), 'cross_entropy': (cross_entropy, cross_entropy_derivative)}
 
 #### MLP class ####
@@ -88,8 +97,10 @@ class MLP:
     def feedforward(self, X):
         A = X
         for w, b in zip(self.W, self.B):
+            #print(A)
             Z = np.dot(w, A) + b
             A = self.activation_function(Z)
+        
         return A
 
     def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True, trial=None):
@@ -134,11 +145,11 @@ class MLP:
             elif show_history: 
                 if valid_set is not None:
                     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(acc_train,4)}, cost_train: {round(cost_train,4)}, no_progress_count: {no_progress_count}")
+                    print(f"[{now}] epoch: {epoch}, ACC_val: {acc}, cost_val: {cost}, ACC_train: {round(float(acc_train),4)}, cost_train: {round(float(cost_train),4)}, no_progress_count: {no_progress_count}")
                 else:    
                     print(f"epoch: {epoch}, ACC: {acc}, cost: {cost}")
         
-            # Prune unpromising trial (only for hyperparameters tuning) 
+            # Prune unpromising trial (only for tune option) 
             if trial:
                 trial.report(acc, epoch)
                 if trial.should_prune():
@@ -198,7 +209,7 @@ class MLP:
     def __track_progress(self, X, Y):
         """Evaluates accuracy and cost and the end of each epoch."""
         acc = self.evaluate(X, Y)
-        cost = round(self.cost_function(Y, self.feedforward(X))/X.shape[1], 4)
+        cost = round(float(self.cost_function(Y, self.feedforward(X))/X.shape[1]), 4)
         return acc, cost
 
     def evaluate(self, X, Y):
@@ -220,11 +231,11 @@ class MLP:
         self.B = [biases_data[key] for key in biases_data.files]
 
 #### Main section ####
-def learn(net, data, epochs, batch_size, eta, lmbda, show_history, trial=None):
+def learn(net, data, epochs, batch_size, eta, lmbda, show_history,  trial=None, path='./data'):
     train, valid, test = data
     net = net
     net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, trial=trial)
-    net.save('./data/')
+    net.save(path)
     acc = net.evaluate(*test)
     print(f'Accuracy: {acc}')
     return acc
@@ -238,9 +249,10 @@ def load_weights_and_biases(net, data, path='./data'):
     print(f'Accuracy: {acc}')
     return acc
 
-def tune_hyperparameters(n_trials, data, epochs): 
+def tune_hyperparameters(n_trials, data, epochs, activation = 'leaky_relu', cost ='quadratic', path='./data'): 
     def objective(trial):
-        n_neurons = trial.suggest_int('n_neurons', 1, 1500)
+        n_neurons1 = trial.suggest_int('n_neurons1', 1, 1500)
+        #n_neurons2 = trial.suggest_int('n_neurons2', 1, 1500)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
         lmbda = trial.suggest_float('lmbda', 1e-3, 10)
         batch_size = trial.suggest_int('batch_size', 10, 100)
@@ -248,8 +260,8 @@ def tune_hyperparameters(n_trials, data, epochs):
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
-        net = MLP(layers=[784, n_neurons, 10], cost_function='cross_entropy', activation_function='sigmoid', dropout_rate=dropout_rate)
-        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, trial=trial)
+        net = MLP(layers=[784, n_neurons1, 10], cost_function=cost, activation_function=activation, dropout_rate=dropout_rate)
+        acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, trial=trial, path=path)
         acc_valid = net.best_acc
         
         return acc_valid
@@ -278,11 +290,12 @@ if __name__ == '__main__':
     parser.add_argument('--eta', type=float, help='Learning rate.')
     parser.add_argument('--lmbda', type=float, help='Regularization parameter.')
     parser.add_argument('--cost', choices=['cross_entropy', 'quadratic'], help='Cost function.')
-    parser.add_argument('--activation', choices=['sigmoid', 'relu'], help='Activation function.')
+    parser.add_argument('--activation', choices=['sigmoid', 'leaky_relu', 'softmax'], help='Activation function.')
     parser.add_argument('--show_history', type=bool, help='Show training history.')
     parser.add_argument('--download_data', type=bool, help='Download the dataset.')
     parser.add_argument('--n_trials', type=int, help='Number of trials for hyperparameter tuning.')
     parser.add_argument('--n_augment', type=int, help='Number of augmentations for the training set (rotations and shifting).')
+    parser.add_argument('--use_gpu', action='store_true', help='Use cupy for matrix operations.')
     args = parser.parse_args()
 
     # Load default values from config file
@@ -302,6 +315,7 @@ if __name__ == '__main__':
     download_data = config_options['download_data']
     default_n_trials = config_options['n_trials']
     default_n_augment = config_options['n_augment']
+    default_use_gpu = config_options['use_gpu']
 
     # Override defaults with command-line arguments if provided
     layers = args.layers if args.layers is not None else default_layers
@@ -315,12 +329,16 @@ if __name__ == '__main__':
     download_data = args.download_data if args.download_data is not None else download_data
     n_trials = args.n_trials if args.n_trials is not None else default_n_trials
     n_augment = args.n_augment if args.n_augment is not None else default_n_augment
+    use_gpu = args.use_gpu if args.use_gpu is not None else default_use_gpu
     
     # Load the data
-    data_loader = mnist_loader(download=download_data, path=data_path, n_augment=n_augment)
+    data_loader = mnist_loader(download=download_data, path=data_path, n_augment=n_augment, use_gpu=use_gpu)
     data = data_loader.train, data_loader.valid, data_loader.test
 
     # Initialize the network
+    if use_gpu:
+        print('cupy from main')
+        import cupy as np
     net = MLP(layers=layers, cost_function=cost, activation_function=activation)
 
     if args.command == 'learn':
@@ -330,8 +348,14 @@ if __name__ == '__main__':
               batch_size=batch_size, 
               eta=eta, 
               lmbda=lmbda, 
-              show_history=show_history)
+              show_history=show_history,
+              path=data_path)
     elif args.command == 'load':
-        load_weights_and_biases(net=net, data=data)
+        load_weights_and_biases(net=net, data=data, path=data_path)
     elif args.command == 'tune':
-        tune_hyperparameters(n_trials=n_trials, data=data, epochs=epochs)
+        tune_hyperparameters(n_trials=n_trials, 
+                             data=data, 
+                             epochs=epochs, 
+                             activation = activation,
+                             cost = cost, 
+                             path=data_path)
