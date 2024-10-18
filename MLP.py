@@ -249,9 +249,12 @@ def load_weights_and_biases(net, data, path='./data'):
     print(f'Accuracy: {acc}')
     return acc
 
-def tune_hyperparameters(n_trials, data, epochs, activation = 'leaky_relu', cost ='quadratic', path='./data'): 
+def tune_hyperparameters(n_trials, data, epochs, n_hidden_layers=2, activation = 'leaky_relu', cost ='quadratic', path='./data'): 
     def objective(trial):
-        n_neurons1 = trial.suggest_int('n_neurons1', 1, 1500)
+        layers = [784]
+        layers.extend([trial.suggest_int(f'n_neurons_{i}', 1, 150) for i in range(n_hidden_layers)])
+        layers.append(10)
+        #n_neurons = [trial.suggest_int('n_neurons', 1, 1500) for i in range(n_hidden_layers)]
         #n_neurons2 = trial.suggest_int('n_neurons2', 1, 1500)
         eta = trial.suggest_float('eta', 1e-3, 0.5)
         lmbda = trial.suggest_float('lmbda', 1e-3, 10)
@@ -260,7 +263,7 @@ def tune_hyperparameters(n_trials, data, epochs, activation = 'leaky_relu', cost
         #cost_function = trial.suggest_categorical('cost_function', ['cross_entropy', 'quadratic'])
         #activation_function = trial.suggest_categorical('activation_function', ['sigmoid'])
 
-        net = MLP(layers=[784, n_neurons1, 10], cost_function=cost, activation_function=activation, dropout_rate=dropout_rate)
+        net = MLP(layers=layers, cost_function=cost, activation_function=activation, dropout_rate=dropout_rate)
         acc_test = learn(net, data, epochs=epochs, batch_size=batch_size, eta=eta, lmbda=lmbda, show_history=True, trial=trial, path=path)
         acc_valid = net.best_acc
         
@@ -294,6 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--show_history', type=bool, help='Show training history.')
     parser.add_argument('--download_data', type=bool, help='Download the dataset.')
     parser.add_argument('--n_trials', type=int, help='Number of trials for hyperparameter tuning.')
+    parser.add_argument('--n_hidden_layers', type=int, help='Number of hidden layers to use for hyperparameters tuning')
     parser.add_argument('--n_augment', type=int, help='Number of augmentations for the training set (rotations and shifting).')
     parser.add_argument('--use_gpu', action='store_true', help='Use cupy for matrix operations.')
     args = parser.parse_args()
