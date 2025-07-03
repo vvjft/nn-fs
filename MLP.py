@@ -95,13 +95,13 @@ class MLP:
         self.dropout_rate=dropout_rate
 
     def feedforward(self, X):
-        A = X
+        a = X
         for w, b in zip(self.W, self.B):
             #print(A)
-            Z = np.dot(w, A) + b
-            A = self.activation_function(Z)
+            Z = np.dot(w, a) + b
+            a = self.activation_function(Z)
         
-        return A
+        return a
 
     def fit(self, train_set, batch_size, epochs, eta, lmbda, patience=10, valid_set=None, show_history=True, trial=None):
         # Set-up
@@ -204,6 +204,7 @@ class MLP:
         W_grad = []
         for a,d in zip(A[0:-1],D):
             W_grad.append(np.dot(d,np.transpose(a))) # eq. (4)
+            #W_grad.append(a*d)
         return (W_grad, B_grad)
 
     def __track_progress(self, X, Y):
