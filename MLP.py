@@ -78,9 +78,10 @@ cost_functions = {'quadratic': (quadratic, quadratic_derivative), 'cross_entropy
 
 #### MLP class ####
 class MLP:
-    def __init__(self, layers, cost_function = 'cross_entropy', activation_function = 'sigmoid', dropout_rate=0.5):
+    def __init__(self, layers, cost_function = 'cross_entropy', activation_function = 'sigmoid', dropout_rate=0.3):
         self.L = layers
-        self.W = [np.random.randn(x,y)/np.sqrt(y) for x,y in zip(self.L[1:],self.L[0:-1])] # divide by stadard deviation to avoid saturation
+        #self.W = [np.random.randn(x,y)/np.sqrt(y) for x,y in zip(self.L[1:],self.L[0:-1])] # divide by stadard deviation to avoid saturation
+        self.W = [np.random.randn(x,y) for x,y in zip(self.L[1:],self.L[0:-1])]
         self.B = [np.random.randn(x,1) for x in self.L[1:]]
 
         if cost_function in cost_functions:
@@ -112,7 +113,7 @@ class MLP:
             print("Tracking progress on the validation set")
         else:
             print("Tracking progress on the training set")
-        best_acc, no_progress_count, best_epoch = 0.0, np.Inf, 0
+        best_acc, no_progress_count, best_epoch = 0.0, np.inf, 0
 
         # Training
         for epoch in range(epochs):
@@ -182,6 +183,7 @@ class MLP:
             Z.append(z)
             A.append(a)
         A, masks = self.dropout(A, 0.5)
+        #A, masks = self.dropout(A, 0)
         (delta_nabla_W, delta_nabla_B) = self.__get_gradients(y, A, Z, masks)
         return (delta_nabla_W, delta_nabla_B)
     
@@ -198,8 +200,8 @@ class MLP:
         D = [delta(y,A[-1],Z[-1])] # eq. (1)
         for i in range(1,len(Z)):
             D.insert(0, np.dot(self.W[-i].T,D[0])*self.activation_derivative(Z[-i-1])) # eq. (2)
-        for i, mask in zip(range(len(masks)),masks):
-            D[i]*=mask
+        #for i, mask in zip(range(len(masks)),masks):
+        #    D[i]*=mask
         B_grad = D # eq. (3)
         W_grad = []
         for a,d in zip(A[0:-1],D):
@@ -209,8 +211,8 @@ class MLP:
 
     def __track_progress(self, X, Y):
         """Evaluates accuracy and cost and the end of each epoch."""
-        acc = self.evaluate(X, Y)
-        cost = round(float(self.cost_function(Y, self.feedforward(X))/X.shape[1]), 4)
+        acc, cost = self.evaluate(X, Y)
+        #cost = round(float(self.cost_function(Y, self.feedforward(X))/X.shape[1]), 4)
         return acc, cost
 
     def evaluate(self, X, Y):
@@ -219,7 +221,8 @@ class MLP:
         for prediction, y in zip(predictions.T, Y.T):
             if np.argmax(prediction) == np.argmax(y):
                 correct_predictions += 1
-        return correct_predictions/(X.shape[1])
+        cost = round(float(self.cost_function(Y, predictions)/X.shape[1]), 4)
+        return correct_predictions/(X.shape[1]), cost
     
     def save(self, path): 
         np.savez(f'{path}/weights.npz', *self.W)
@@ -235,19 +238,23 @@ class MLP:
 def learn(net, data, epochs, batch_size, eta, lmbda, show_history,  trial=None, path='./data'):
     train, valid, test = data
     net = net
-    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=10, valid_set=valid, show_history=show_history, trial=trial)
+    net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=100, valid_set=valid, show_history=show_history, trial=trial)
+    #net.fit(train_set=train, batch_size=batch_size, epochs=epochs, eta=eta, lmbda=lmbda, patience=100, valid_set=None, show_history=show_history, trial=trial)
     net.save(path)
-    acc = net.evaluate(*test)
-    print(f'Accuracy: {acc}')
+    acc, cost = net.evaluate(*test)
+    print(f'Accuracy on test: {acc}')
+    print(f'Cost on test: {cost}')
     return acc
 
 def load_weights_and_biases(net, data, path='./data'):
     train, valid, test = data
     net = net
     net.load(path)
-
-    acc = net.evaluate(*test)
-    print(f'Accuracy: {acc}')
+    if epochs>0:
+        learn(net, data, epochs, batch_size, eta, lmbda, show_history, trial=None, path=path)
+    else:
+        acc = net.evaluate(*test)
+        print(f'Accuracy: {acc}')
     return acc
 
 def tune_hyperparameters(n_trials, data, epochs, n_hidden_layers=2, activation = 'leaky_relu', cost ='quadratic', path='./data'): 
